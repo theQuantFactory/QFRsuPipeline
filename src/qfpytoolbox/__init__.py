@@ -1,120 +1,111 @@
-"""QFPyToolbox — a Pythonic quantitative finance toolbox."""
+"""QFPyToolbox — a Pythonic data and utilities toolbox.
+
+Python equivalent of `MyJuliaToolbox.jl <https://github.com/lemahdi/MyJuliaToolbox.jl>`_.
+
+Sub-packages
+------------
+- ``qfpytoolbox.io`` — DataFrame I/O, media abstractions, and async logging.
+- ``qfpytoolbox.utils`` — Date utilities and DataFrame comparison.
+- ``qfpytoolbox.parameters`` — JSON-backed configuration management.
+- ``qfpytoolbox.dataset`` — Typed dataset persistence (Arrow/CSV + JSON).
+"""
 
 from __future__ import annotations
 
 __version__ = "0.1.0"
 
-from qfpytoolbox.finance import (
-    black_scholes_call,
-    black_scholes_greeks,
-    black_scholes_put,
-    bond_convexity,
-    bond_duration,
-    bond_price,
-    compound_interest,
-    future_value,
-    irr,
-    npv,
-    present_value,
+# -- IO helpers re-exported at top level for convenience --------------------
+# -- Parameters & Dataset ---------------------------------------------------
+from qfpytoolbox.dataset import (
+    LoadedDataSet,
+    iDataSet,
+    nonpersisted_fields,
+    read_dataset,
+    write_dataset,
 )
-from qfpytoolbox.optim import (
-    efficient_frontier,
-    equal_weight_portfolio,
-    max_sharpe_portfolio,
-    min_variance_portfolio,
-    portfolio_return,
-    portfolio_sharpe,
-    portfolio_volatility,
-    risk_parity_portfolio,
+from qfpytoolbox.io import (
+    ArchiveMedia,
+    AsyncLogger,
+    ConsoleMedia,
+    DatabaseMedia,
+    FileSystemMedia,
+    LogRecord,
+    SQLDumpMedia,
+    dropped_logs,
+    flush_logger,
+    iSourceMedia,
+    log_debug,
+    log_error,
+    log_info,
+    log_warn,
+    read_arrow_to_df,
+    read_csv_to_df,
+    read_dataframe,
+    stop_logger,
+    write_dataframe,
 )
-from qfpytoolbox.stats import (
-    alpha,
-    beta,
-    calmar_ratio,
-    conditional_var,
-    correlation_matrix,
-    covariance_matrix,
-    excess_kurtosis,
-    information_ratio,
-    max_drawdown,
-    mean_return,
-    sharpe_ratio,
-    skewness,
-    sortino_ratio,
-    tracking_error,
-    value_at_risk,
-    volatility,
+from qfpytoolbox.parameters import (
+    iParameters,
+    parameters_from_dict,
+    parameters_from_json,
+    read_parameters,
+    write_parameters,
 )
-from qfpytoolbox.timeseries import (
-    annualize_returns,
-    autocorrelation,
-    cumulative_returns,
-    drawdown_series,
-    ewm_mean,
-    ewm_std,
-    log_returns,
-    rolling_beta,
-    rolling_correlation,
-    rolling_max_drawdown,
-    rolling_mean,
-    rolling_sharpe,
-    rolling_std,
-    simple_returns,
+
+# -- Utils re-exported at top level -----------------------------------------
+from qfpytoolbox.utils import (
+    DataFrameComparisonResult,
+    add_days_convention,
+    compare_dataframes,
+    date2int,
+    days_between,
+    int2date,
+    yearfrac,
 )
 
 __all__ = [
     "__version__",
-    # stats
-    "mean_return",
-    "volatility",
-    "skewness",
-    "excess_kurtosis",
-    "sharpe_ratio",
-    "sortino_ratio",
-    "max_drawdown",
-    "calmar_ratio",
-    "value_at_risk",
-    "conditional_var",
-    "information_ratio",
-    "tracking_error",
-    "beta",
-    "alpha",
-    "correlation_matrix",
-    "covariance_matrix",
-    # timeseries
-    "rolling_mean",
-    "rolling_std",
-    "rolling_sharpe",
-    "rolling_max_drawdown",
-    "rolling_correlation",
-    "rolling_beta",
-    "ewm_mean",
-    "ewm_std",
-    "cumulative_returns",
-    "log_returns",
-    "simple_returns",
-    "annualize_returns",
-    "drawdown_series",
-    "autocorrelation",
-    # optim
-    "min_variance_portfolio",
-    "max_sharpe_portfolio",
-    "efficient_frontier",
-    "risk_parity_portfolio",
-    "equal_weight_portfolio",
-    "portfolio_return",
-    "portfolio_volatility",
-    "portfolio_sharpe",
-    # finance
-    "compound_interest",
-    "present_value",
-    "future_value",
-    "npv",
-    "irr",
-    "bond_price",
-    "bond_duration",
-    "bond_convexity",
-    "black_scholes_call",
-    "black_scholes_put",
-    "black_scholes_greeks",
+    # io — media
+    "iSourceMedia",
+    "FileSystemMedia",
+    "DatabaseMedia",
+    "SQLDumpMedia",
+    "ConsoleMedia",
+    "ArchiveMedia",
+    # io — dataframes
+    "read_dataframe",
+    "write_dataframe",
+    "read_csv_to_df",
+    "read_arrow_to_df",
+    # io — logger
+    "LogRecord",
+    "AsyncLogger",
+    "log_debug",
+    "log_info",
+    "log_warn",
+    "log_error",
+    "flush_logger",
+    "stop_logger",
+    "dropped_logs",
+    # utils — dates
+    "date2int",
+    "int2date",
+    "days_between",
+    "yearfrac",
+    "add_days_convention",
+    # utils — compare
+    "DataFrameComparisonResult",
+    "compare_dataframes",
+    # parameters
+    "iParameters",
+    "parameters_from_dict",
+    "parameters_from_json",
+    "read_parameters",
+    "write_parameters",
+    # dataset
+    "iDataSet",
+    "LoadedDataSet",
+    "nonpersisted_fields",
+    "write_dataset",
+    "read_dataset",
 ]

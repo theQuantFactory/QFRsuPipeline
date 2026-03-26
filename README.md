@@ -1,137 +1,204 @@
 # QFPyToolbox
 
-[![CI](https://github.com/QFPyToolbox/QFPyToolbox/actions/workflows/ci.yml/badge.svg)](https://github.com/QFPyToolbox/QFPyToolbox/actions/workflows/ci.yml)
+[![CI](https://github.com/lemahdi/QFPyToolbox/actions/workflows/ci.yml/badge.svg)](https://github.com/lemahdi/QFPyToolbox/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A Pythonic quantitative finance toolbox — a Python equivalent of Julia-based quant toolboxes, built on NumPy with optional SciPy, matplotlib, and pandas support.
+A Pythonic data and utilities toolbox — Python equivalent of [`MyJuliaToolbox.jl`](https://github.com/lemahdi/MyJuliaToolbox.jl).
 
 ---
 
 ## Features
 
-- **Risk & Return Statistics** — Sharpe, Sortino, Calmar, VaR, CVaR, alpha, beta, drawdown, and more
-- **Time Series Analysis** — Rolling windows, EWM, cumulative returns, drawdown series, autocorrelation
-- **Portfolio Optimization** — Min-variance, max-Sharpe, efficient frontier, risk parity (requires scipy)
-- **Financial Calculations** — Bond pricing/duration/convexity, Black-Scholes options, NPV, IRR, time value of money
-- **Pure NumPy core** — Only `numpy>=1.24` required; scipy/matplotlib/pandas are optional
+- **DataFrame I/O** — Read/write DataFrames from CSV, Arrow, gzipped CSV, and Excel (`.xlsx`), with atomic writes
+- **Media interface** — Unified read/write abstraction over file system, SQLite database, SQL dump files, console, and archives (`.zip` / `.tar.gz`)
+- **Async logger** — Non-blocking structured logging to files, databases, or the console via a background thread
+- **Date utilities** — Integer `yyyymmdd` date helpers: `date2int`, `int2date`, `days_between`, `yearfrac`, `add_days_convention` (following/modified-following/previous conventions, holidays, custom weekends)
+- **DataFrame comparison** — Cell-level comparison with numeric tolerances, type checking, missing-value handling, and per-column precision
+- **Parameters** — JSON-backed configuration with `iParameters`, typed round-trip serialisation, and media-aware `read_parameters`/`write_parameters`
+- **Datasets** — Typed dataset persistence with `iDataSet`: DataFrames as Arrow/CSV, metadata as JSON, archive I/O
 
 ---
 
 ## Installation
 
 ```bash
-# Core (NumPy only)
+# Core (pandas + pyarrow + openpyxl)
 pip install qfpytoolbox
 
-# With portfolio optimization and options pricing
-pip install "qfpytoolbox[scipy]"
-
-# With plotting support
-pip install "qfpytoolbox[plot]"
-
-# With pandas integration
-pip install "qfpytoolbox[pandas]"
-
-# Everything
-pip install "qfpytoolbox[all]"
+# With MinIO / S3-compatible object store support
+pip install "qfpytoolbox[minio]"
 
 # Development
-pip install "qfpytoolbox[dev,all]"
+pip install "qfpytoolbox[dev]"
 ```
 
 ---
 
 ## Quick Start
 
+### DataFrame I/O
+
 ```python
-import numpy as np
+import pandas as pd
+from qfpytoolbox import read_dataframe, write_dataframe, FileSystemMedia
+
+df = pd.DataFrame({"id": [1, 2, 3], "value": [10.5, 20.1, 30.0]})
+
+# Write / read CSV
+write_dataframe("data.csv", df)
+df2 = read_dataframe("data.csv")
+
+# Write / read Arrow
+write_dataframe("data.arrow", df)
+df3 = read_dataframe("data.arrow")
+
+# Write / read gzipped CSV
+write_dataframe("data.csv.gz", df)
+df4 = read_dataframe("data.csv.gz")
+
+# Via FileSystemMedia (directory-based)
+media = FileSystemMedia("/tmp/mydata")
+write_dataframe(media, df, filename="prices.arrow", format="arrow", overwrite=True)
+df5 = read_dataframe(media, filename="prices.arrow")
+```
+
+### SQLite Database
+
+```python
+from qfpytoolbox import DatabaseMedia, read_dataframe, write_dataframe
+
+with DatabaseMedia("analytics.db") as db:
+    write_dataframe(db, df, table="prices")
+    result = read_dataframe(db, table="prices")
+    custom = read_dataframe(db, query="SELECT id FROM prices WHERE value > 15")
+```
+
+### Async Logger
+
+```python
 from qfpytoolbox import (
-    mean_return, volatility, sharpe_ratio, max_drawdown,
-    cumulative_returns, rolling_sharpe, value_at_risk,
+    AsyncLogger, ConsoleMedia, FileSystemMedia,
+    log_info, log_warn, log_error, stop_logger,
 )
 
-# Generate sample daily returns
-rng = np.random.default_rng(42)
-returns = rng.normal(0.0005, 0.01, 252)
+# Log to console
+logger = AsyncLogger(ConsoleMedia(), min_level="info")
+log_info(logger, "Job started", metadata={"job_id": 42})
+log_warn(logger, "Slow query detected")
+stop_logger(logger)
 
-# Risk/return statistics
-print(f"Mean return (ann.): {mean_return(returns, annualize=True):.2%}")
-print(f"Volatility (ann.):  {volatility(returns, annualize=True):.2%}")
-print(f"Sharpe ratio (ann.): {sharpe_ratio(returns, annualize=True):.2f}")
-print(f"Max drawdown:        {max_drawdown(returns):.2%}")
-print(f"95% VaR (daily):     {value_at_risk(returns, confidence=0.95):.2%}")
-
-# Rolling Sharpe
-roll_sharpe = rolling_sharpe(returns, window=20, annualize=True)
-
-# Cumulative returns (length = len(returns) + 1)
-cum_ret = cumulative_returns(returns)
-print(f"Total return: {cum_ret[-1] - 1:.2%}")
+# Log to file
+file_logger = AsyncLogger(FileSystemMedia("app.log"), min_level="debug")
+log_info(file_logger, "Processing complete")
+stop_logger(file_logger)
 ```
 
-### Portfolio Optimization (requires scipy)
+### Date Utilities
 
 ```python
-import numpy as np
-from qfpytoolbox import (
-    covariance_matrix, min_variance_portfolio,
-    max_sharpe_portfolio, efficient_frontier,
+from datetime import date
+from qfpytoolbox import date2int, int2date, days_between, yearfrac, add_days_convention
+
+# Integer date helpers
+d = date(2025, 6, 30)
+print(date2int(d))          # 20250630
+print(int2date(20250630))   # date(2025, 6, 30)
+
+# Day count / year fraction
+print(days_between(20250101, 20251231))              # 364
+print(yearfrac(20250101, 20251231, basis="actual365")) # 0.9972...
+
+# Business day adjustment
+result = add_days_convention(
+    date(2026, 1, 30), 1,
+    convention="modified_following",
+    holidays=[date(2026, 2, 2)],
 )
-
-# Sample multi-asset returns (n_obs, n_assets)
-rng = np.random.default_rng(0)
-returns_matrix = rng.normal(0.001, 0.01, (252, 4))
-expected_returns = np.array([0.10, 0.12, 0.08, 0.15])
-cov = covariance_matrix(returns_matrix, annualize=True)
-
-# Minimum variance portfolio
-mv = min_variance_portfolio(expected_returns, cov)
-print(f"Min-var weights: {mv['weights'].round(3)}")
-print(f"Min-var vol:     {mv['volatility']:.2%}")
-
-# Maximum Sharpe portfolio
-ms = max_sharpe_portfolio(expected_returns, cov, risk_free_rate=0.02)
-print(f"Max-Sharpe:      {ms['sharpe']:.2f}")
-
-# Efficient frontier
-ef = efficient_frontier(expected_returns, cov, n_points=30)
 ```
 
-### Bond Pricing
+### DataFrame Comparison
 
 ```python
-from qfpytoolbox import bond_price, bond_duration, bond_convexity
+from qfpytoolbox import compare_dataframes
 
-# 6% semi-annual coupon bond, 5-year maturity, 5% YTM
-price = bond_price(face_value=1000, coupon_rate=0.06, yield_to_maturity=0.05, periods=10, frequency=2)
-dur   = bond_duration(1000, 0.06, 0.05, 10, frequency=2)
-conv  = bond_convexity(1000, 0.06, 0.05, 10, frequency=2)
-print(f"Price: {price:.2f}, Duration: {dur:.2f}yr, Convexity: {conv:.2f}")
+left  = pd.DataFrame({"id": [1, 2, 3], "amount": [100.0, 200.0, 300.0]})
+right = pd.DataFrame({"id": [1, 2, 4], "amount": [100.0, 200.5, 400.0]})
+
+result = compare_dataframes(
+    left, right,
+    left_key="id",
+    target_columns=["amount"],
+    precision=0.1,
+    title="reconcile",
+)
+print(result.equal)              # False
+print(result.left_only_rows)     # 1  (id=3)
+print(result.right_only_rows)    # 1  (id=4)
+print(result.numeric_mismatches) # 1  (id=2, diff=0.5)
+print(result.differences)        # DataFrame with full details
 ```
 
-### Black-Scholes Options (requires scipy)
+### Parameters (JSON Configuration)
 
 ```python
-from qfpytoolbox import black_scholes_call, black_scholes_put, black_scholes_greeks
+import dataclasses
+from qfpytoolbox import iParameters, write_parameters, read_parameters, FileSystemMedia
 
-call = black_scholes_call(S=100, K=100, T=1.0, r=0.05, sigma=0.2)
-put  = black_scholes_put(S=100, K=100, T=1.0, r=0.05, sigma=0.2)
-greeks = black_scholes_greeks(S=100, K=100, T=1.0, r=0.05, sigma=0.2)
-print(f"Call: {call:.4f}, Put: {put:.4f}")
-print(f"Delta(call)={greeks['delta_call']:.4f}, Gamma={greeks['gamma']:.4f}, Vega={greeks['vega']:.4f}")
+@dataclasses.dataclass
+class ModelParams(iParameters):
+    learning_rate: float
+    epochs: int
+    name: str
+
+params = ModelParams(learning_rate=0.001, epochs=20, name="experiment-1")
+
+# Write / read directly
+write_parameters("config.json", params)
+loaded = read_parameters(ModelParams, FileSystemMedia("."), "config.json")
+print(loaded.learning_rate)  # 0.001
+```
+
+### Datasets
+
+```python
+import dataclasses
+from qfpytoolbox import iDataSet, write_dataset, read_dataset, FileSystemMedia
+
+@dataclasses.dataclass
+class MyDataSet(iDataSet):
+    prices: pd.DataFrame
+    label: str
+    version: int
+
+ds = MyDataSet(prices=df, label="v1", version=1)
+
+# Write (DataFrames → Arrow, scalars → data.json)
+write_dataset(FileSystemMedia("/tmp/myds"), ds)
+
+# Read back (auto-typed from data_info.json when class is importable)
+loaded = read_dataset("/tmp/myds")
+
+# Archive I/O
+from qfpytoolbox import ArchiveMedia
+write_dataset(ArchiveMedia("myds.zip"), ds, overwrite=True)
 ```
 
 ---
 
 ## Module Overview
 
-| Module | Description | scipy required? |
-|---|---|---|
-| `qfpytoolbox.stats` | Risk/return statistics: Sharpe, VaR, beta, alpha, drawdown, … | No |
-| `qfpytoolbox.timeseries` | Rolling windows, EWM, cumulative returns, log/simple returns | No |
-| `qfpytoolbox.optim` | Min-variance, max-Sharpe, efficient frontier, risk parity | Yes |
-| `qfpytoolbox.finance` | Bonds, Black-Scholes, NPV, IRR, compounding | Yes (for B-S) |
+| Module | Description |
+|---|---|
+| `qfpytoolbox.io.media` | `iSourceMedia`, `FileSystemMedia`, `DatabaseMedia`, `SQLDumpMedia`, `ConsoleMedia`, `ArchiveMedia` |
+| `qfpytoolbox.io.dataframes` | `read_dataframe`, `write_dataframe`, `read_csv_to_df`, `read_arrow_to_df` |
+| `qfpytoolbox.io.logger` | `AsyncLogger`, `LogRecord`, `log_info`, `log_warn`, `log_error`, `log_debug`, `stop_logger`, `flush_logger`, `dropped_logs` |
+| `qfpytoolbox.utils.dates` | `date2int`, `int2date`, `days_between`, `yearfrac`, `add_days_convention` |
+| `qfpytoolbox.utils.dataframe_compare` | `compare_dataframes`, `DataFrameComparisonResult` |
+| `qfpytoolbox.parameters` | `iParameters`, `parameters_from_dict`, `parameters_from_json`, `read_parameters`, `write_parameters` |
+| `qfpytoolbox.dataset` | `iDataSet`, `LoadedDataSet`, `write_dataset`, `read_dataset`, `nonpersisted_fields` |
+
+All public symbols are also re-exported from the top-level `qfpytoolbox` package.
 
 ---
 
@@ -147,25 +214,18 @@ print(f"Delta(call)={greeks['delta_call']:.4f}, Gamma={greeks['gamma']:.4f}, Veg
 
 ---
 
-## Documentation
-
-- **[Julia → Python Mapping](docs/MAPPING.md)** — Concept and function mapping from Julia toolbox equivalents
-
----
-
 ## Development
 
 ```bash
-git clone https://github.com/QFPyToolbox/QFPyToolbox.git
+git clone https://github.com/lemahdi/QFPyToolbox.git
 cd QFPyToolbox
-pip install -e ".[dev,all]"
+pip install -e ".[dev]"
 
 # Run tests
-pytest tests/ -v --cov=qfpytoolbox
+pytest tests/ -v
 
 # Lint
 ruff check src/ tests/
-ruff format src/ tests/
 ```
 
 ---
@@ -173,3 +233,4 @@ ruff format src/ tests/
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
+
