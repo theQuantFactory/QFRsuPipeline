@@ -211,28 +211,252 @@ def build_menage_trajectory(df_master: pd.DataFrame, score_col: str = "score_fin
     return base
 
 
-def build_score_timeseries(df_master: pd.DataFrame, score_col: str = "score_final") -> dict[str, pd.DataFrame]:
-    req = {"menage_ano", "date_calcul", score_col}
-    if not req.issubset(df_master.columns):
+def build_score_timeseries(
+    df_master: pd.DataFrame,
+    score_col: str = "score_final",
+    include_demo_breakdowns: bool = True,
+    include_percentiles: bool = True,
+    timeseries_freq: str = "W-MON",
+    batch_size: int = 0,
+) -> dict[str, pd.DataFrame]:
+    required = ["menage_ano", "date_calcul", score_col]
+    if not set(required).issubset(df_master.columns):
         return {"daily_stats": pd.DataFrame(), "daily_menages": pd.DataFrame()}
-    df = df_master[["menage_ano", "date_calcul", score_col]].copy()
-    df["date_calcul"] = pd.to_datetime(df["date_calcul"], errors="coerce")
-    df["week"] = df["date_calcul"].dt.to_period("W").dt.start_time
-    out = (
-        df.groupby("week", observed=True)[score_col]
-        .agg(score_mean="mean", score_median="median", score_std="std", score_min="min", score_max="max")
-        .reset_index()
-        .rename(columns={"week": "date_calcul"})
+
+    demo_cols = [c for c in ["milieu", "region", "genre_cm"] if c in df_master.columns] if include_demo_breakdowns else []
+    keep = ["menage_ano", "date_calcul", score_col, "type_demande"] + demo_cols
+    if "type_demande" not in df_master.columns:
+        df_master = df_master.copy()
+        df_master["type_demande"] = ""
+    ev = df_master[keep].copy()
+    if not pd.api.types.is_datetime64_any_dtype(ev["date_calcul"]):
+        ev["date_calcul"] = pd.to_datetime(ev["date_calcul"], errors="coerce", cache=False)
+    ev[score_col] = pd.to_numeric(ev[score_col], errors="coerce")
+    ev["type_norm"] = ev["type_demande"].astype(str).str.strip().str.lower()
+    ev.loc[ev["type_norm"] == "radiation", score_col] = np.nan
+    ev = (
+        ev.drop(columns=["type_demande"])
+        .dropna(subset=["date_calcul"])
+        .sort_values(["date_calcul", "menage_ano"])
+        .reset_index(drop=True)
     )
-    n = (
-        df.groupby("week", observed=True)["menage_ano"]
-        .nunique()
-        .rename("n_menages")
-        .reset_index()
-        .rename(columns={"week": "date_calcul"})
-    )
-    out = out.merge(n, on="date_calcul", how="left")
-    return {"daily_stats": out.sort_values("date_calcul").reset_index(drop=True), "daily_menages": pd.DataFrame()}
+    if ev.empty:
+        return {"daily_stats": pd.DataFrame(), "daily_menages": pd.DataFrame()}
+
+    t0 = ev["date_calcul"].min()
+    tmax = ev["date_calcul"].max()
+    on_t0 = ev[ev["date_calcul"] == t0].copy()
+    first_per_hh = ev.drop_duplicates(subset=["menage_ano"], keep="first")
+    pre = first_per_hh[(first_per_hh["type_norm"] != "inscription") & (first_per_hh["date_calcul"] > t0)].copy()
+    pre["date_calcul"] = t0
+    seed = pd.concat([on_t0, pre], ignore_index=True).drop_duplicates(subset=["menage_ano"], keep="first")
+    if not seed.empty:
+        pre_menages = set(pre["menage_ano"].tolist())
+        first_dates = ev.groupby("menage_ano", observed=True)["date_calcul"].transform("min")
+        ev = ev[~(ev["menage_ano"].isin(pre_menages) & (ev["date_calcul"] == first_dates))].copy()
+        ev = pd.concat([seed, ev], ignore_index=True).sort_values(["date_calcul", "menage_ano"]).reset_index(drop=True)
+    ev = ev.drop(columns=["type_norm"])
+
+    freq_norm = (timeseries_freq or "W-MON").strip().upper()
+    if freq_norm in {"D", "DAILY"}:
+        period_points = pd.date_range(t0.normalize(), tmax.normalize(), freq="D")
+    else:
+        period_points = pd.date_range(t0.to_period("W").start_time, tmax.to_period("W").start_time, freq="W-MON")
+    if len(period_points) == 0:
+        return {"daily_stats": pd.DataFrame(), "daily_menages": pd.DataFrame()}
+    batch_n = int(batch_size) if int(batch_size) > 0 else len(period_points)
+
+    # Fast path for dashboard profile (overall weekly series only).
+    # Keeps the same running-state behavior while avoiding Python dict/list churn.
+    if not include_demo_breakdowns and not include_percentiles:
+        hh_codes, _ = pd.factorize(ev["menage_ano"], sort=False)
+        if len(hh_codes) == 0:
+            return {"daily_stats": pd.DataFrame(), "daily_menages": pd.DataFrame()}
+
+        dates = ev["date_calcul"].to_numpy(dtype="datetime64[ns]")
+        scores_ev = ev[score_col].to_numpy(dtype=float)
+        order = np.argsort(dates, kind="stable")
+        dates = dates[order]
+        hh_codes = hh_codes[order]
+        scores_ev = scores_ev[order]
+
+        n_hh = int(hh_codes.max()) + 1
+        cur_scores = np.full(n_hh, np.nan, dtype=float)
+        ptr = 0
+        n_ev = len(dates)
+        rows_fast: list[dict[str, Any]] = []
+
+        for i in range(0, len(period_points), batch_n):
+            for week_end in period_points[i : i + batch_n]:
+                week_np = np.datetime64(week_end.to_datetime64(), "ns")
+                while ptr < n_ev and dates[ptr] <= week_np:
+                    cur_scores[hh_codes[ptr]] = scores_ev[ptr]
+                    ptr += 1
+
+                active = cur_scores[~np.isnan(cur_scores)]
+                if active.size == 0:
+                    continue
+
+                rows_fast.append(
+                    {
+                        "date_calcul": week_end,
+                        "milieu": None,
+                        "region": None,
+                        "genre_cm": None,
+                        "n_menages": int(active.size),
+                        "score_mean": round(float(np.mean(active)), 6),
+                        "score_median": round(float(np.median(active)), 6),
+                        "score_std": round(float(np.std(active)), 6),
+                        "score_min": round(float(np.min(active)), 6),
+                        "score_max": round(float(np.max(active)), 6),
+                        "score_p10": None,
+                        "score_p25": None,
+                        "score_p75": None,
+                        "score_p90": None,
+                    }
+                )
+
+        daily_stats = pd.DataFrame(rows_fast)
+        if daily_stats.empty:
+            return {"daily_stats": pd.DataFrame(), "daily_menages": pd.DataFrame()}
+        daily_stats["date_calcul"] = pd.to_datetime(daily_stats["date_calcul"], errors="coerce")
+        daily_stats = daily_stats.sort_values(["date_calcul", "milieu", "region", "genre_cm"]).reset_index(drop=True)
+        return {"daily_stats": daily_stats, "daily_menages": pd.DataFrame()}
+
+    state: dict[Any, tuple[Any, ...]] = {}
+    ev_records = list(ev.itertuples(index=False, name=None))
+    col_idx = {c: i for i, c in enumerate(ev.columns)}
+    date_idx = col_idx["date_calcul"]
+    score_idx = col_idx[score_col]
+    demo_idx = {d: col_idx[d] for d in demo_cols}
+
+    ev_ptr = 0
+    n_ev = len(ev_records)
+    results: list[dict[str, Any]] = []
+
+    def _stats(arr: np.ndarray) -> tuple[int, float, float, float, float, float, float | None, float | None, float | None, float | None]:
+        p10: float | None = None
+        p25: float | None = None
+        p75: float | None = None
+        p90: float | None = None
+        if include_percentiles:
+            p10 = round(float(np.percentile(arr, 10)), 6)
+            p25 = round(float(np.percentile(arr, 25)), 6)
+            p75 = round(float(np.percentile(arr, 75)), 6)
+            p90 = round(float(np.percentile(arr, 90)), 6)
+        return (
+            len(arr),
+            round(float(np.mean(arr)), 6),
+            round(float(np.median(arr)), 6),
+            round(float(np.std(arr)), 6),
+            round(float(np.min(arr)), 6),
+            round(float(np.max(arr)), 6),
+            p10,
+            p25,
+            p75,
+            p90,
+        )
+
+    for i in range(0, len(period_points), batch_n):
+        for week_end in period_points[i : i + batch_n]:
+            while ev_ptr < n_ev:
+                row = ev_records[ev_ptr]
+                if row[date_idx] <= week_end:
+                    hh = row[0]
+                    sv = row[score_idx]
+                    if pd.isna(sv):
+                        state.pop(hh, None)
+                    else:
+                        state[hh] = row
+                    ev_ptr += 1
+                else:
+                    break
+
+            if not state:
+                continue
+
+            rows = list(state.values())
+            scores = np.array([r[score_idx] for r in rows], dtype=float)
+            valid = ~np.isnan(scores)
+            scores = scores[valid]
+            if len(scores) == 0:
+                continue
+
+            n, mean, median, std, mn, mx, p10, p25, p75, p90 = _stats(scores)
+            results.append(
+                {
+                    "date_calcul": week_end,
+                    "milieu": None,
+                    "region": None,
+                    "genre_cm": None,
+                    "n_menages": n,
+                    "score_mean": mean,
+                    "score_median": median,
+                    "score_std": std,
+                    "score_min": mn,
+                    "score_max": mx,
+                    "score_p10": p10,
+                    "score_p25": p25,
+                    "score_p75": p75,
+                    "score_p90": p90,
+                }
+            )
+
+            valid_rows = [r for r in rows if not pd.isna(r[score_idx])]
+            if valid_rows and demo_idx:
+                score_vals = np.array([float(r[score_idx]) for r in valid_rows], dtype=float)
+                for dim, didx in demo_idx.items():
+                    raw_pairs = [
+                        (v, s)
+                        for v, s in zip((r[didx] for r in valid_rows), score_vals, strict=False)
+                        if (v is not None and not pd.isna(v) and (not isinstance(v, str) or v.strip() != ""))
+                    ]
+                    if not raw_pairs:
+                        continue
+                    dim_df = pd.DataFrame(raw_pairs, columns=["dim", "score"])
+                    agg = (
+                        dim_df.groupby("dim", observed=True)["score"]
+                        .agg(
+                            n_menages="count",
+                            score_mean="mean",
+                            score_median="median",
+                            score_std="std",
+                            score_min="min",
+                            score_max="max",
+                            score_p10=lambda x: x.quantile(0.10),
+                            score_p25=lambda x: x.quantile(0.25),
+                            score_p75=lambda x: x.quantile(0.75),
+                            score_p90=lambda x: x.quantile(0.90),
+                        )
+                        .reset_index()
+                    )
+                    agg = agg[agg["n_menages"] >= 2]
+                    for row_dim in agg.itertuples(index=False):
+                        results.append(
+                            {
+                                "date_calcul": week_end,
+                                "milieu": row_dim.dim if dim == "milieu" else None,
+                                "region": row_dim.dim if dim == "region" else None,
+                                "genre_cm": row_dim.dim if dim == "genre_cm" else None,
+                                "n_menages": int(row_dim.n_menages),
+                                "score_mean": round(float(row_dim.score_mean), 6),
+                                "score_median": round(float(row_dim.score_median), 6),
+                                "score_std": round(float(row_dim.score_std), 6) if not pd.isna(row_dim.score_std) else np.nan,
+                                "score_min": round(float(row_dim.score_min), 6),
+                                "score_max": round(float(row_dim.score_max), 6),
+                                "score_p10": round(float(row_dim.score_p10), 6),
+                                "score_p25": round(float(row_dim.score_p25), 6),
+                                "score_p75": round(float(row_dim.score_p75), 6),
+                                "score_p90": round(float(row_dim.score_p90), 6),
+                            }
+                        )
+
+    daily_stats = pd.DataFrame(results)
+    if daily_stats.empty:
+        return {"daily_stats": pd.DataFrame(), "daily_menages": pd.DataFrame()}
+    daily_stats["date_calcul"] = pd.to_datetime(daily_stats["date_calcul"], errors="coerce")
+    daily_stats = daily_stats.sort_values(["date_calcul", "milieu", "region", "genre_cm"]).reset_index(drop=True)
+    return {"daily_stats": daily_stats, "daily_menages": pd.DataFrame()}
 
 
 def build_monthly_eligibility_flows(df_master: pd.DataFrame) -> pd.DataFrame:
@@ -385,14 +609,13 @@ def build_reentry_analysis(df_master: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
     df["prev_eligible"] = df.groupby(keys, observed=True)["eligible_bool"].shift(1)
     df["reentry_event"] = df["eligible_bool"] & df["prev_eligible"].eq(False)
 
-    detail = (
-        df.groupby(keys, observed=True)
-        .agg(
-            n_reentries=("reentry_event", "sum"),
-            ever_lost=("eligible_bool", lambda s: s.eq(False).any()),
-        )
-        .reset_index()
-    )
+    grouped = df.groupby(keys, observed=True)
+    detail = grouped.agg(
+        n_reentries=("reentry_event", "sum"),
+        all_eligible=("eligible_bool", "all"),
+    ).reset_index()
+    detail["ever_lost"] = ~detail["all_eligible"]
+    detail = detail.drop(columns=["all_eligible"])
     detail["n_reentries"] = detail["n_reentries"].astype(int)
     if detail.empty:
         return detail, pd.DataFrame()
@@ -410,48 +633,224 @@ def build_reentry_analysis(df_master: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
 
 
 def build_near_threshold_timeseries(
-    df_master: pd.DataFrame, score_col: str = "score_final", bands: tuple = (0.10, 0.25, 0.50)
+    df_master: pd.DataFrame,
+    score_col: str = "score_final",
+    bands: tuple = (0.10, 0.25, 0.50),
+    timeseries_freq: str = "W-MON",
+    batch_size: int = 0,
 ) -> pd.DataFrame:
-    req = {"menage_ano", "date_calcul", score_col, "programme", "dist_threshold"}
-    if not req.issubset(df_master.columns):
+    required = ["menage_ano", "date_calcul", score_col, "programme", "dist_threshold"]
+    if not set(required).issubset(df_master.columns):
         return pd.DataFrame()
-    df = df_master[["menage_ano", "date_calcul", score_col, "programme", "dist_threshold"]].copy()
-    # Avoid expensive unique-value cache work on giant object columns when dates are already parsed.
-    if not pd.api.types.is_datetime64_any_dtype(df["date_calcul"]):
-        df["date_calcul"] = pd.to_datetime(df["date_calcul"], errors="coerce", cache=False)
-    df["week"] = df["date_calcul"].dt.to_period("W").dt.start_time
-    df = df.sort_values(["week", "menage_ano", "programme", "date_calcul"]).drop_duplicates(
-        ["week", "menage_ano", "programme"], keep="last"
+
+    keep = ["menage_ano", "date_calcul", score_col, "type_demande", "programme", "dist_threshold"]
+    if "type_demande" not in df_master.columns:
+        df_master = df_master.copy()
+        df_master["type_demande"] = ""
+    ev = df_master[keep].copy()
+    prog_norm = ev["programme"].astype(str).str.strip().str.upper()
+    ev = ev[~prog_norm.isin({"NON CLASSIFIE", "NON CLASSIFIÉ"})]
+    if not pd.api.types.is_datetime64_any_dtype(ev["date_calcul"]):
+        ev["date_calcul"] = pd.to_datetime(ev["date_calcul"], errors="coerce", cache=False)
+    ev[score_col] = pd.to_numeric(ev[score_col], errors="coerce")
+    ev["dist_threshold"] = pd.to_numeric(ev["dist_threshold"], errors="coerce")
+    ev["type_norm"] = ev["type_demande"].astype(str).str.strip().str.lower()
+    ev.loc[ev["type_norm"] == "radiation", score_col] = np.nan
+    ev.loc[ev["type_norm"] == "radiation", "dist_threshold"] = np.nan
+    ev = (
+        ev.drop(columns=["type_demande", "type_norm"])
+        .dropna(subset=["date_calcul"])
+        .sort_values(["date_calcul", "menage_ano", "programme"])
+        .reset_index(drop=True)
     )
-    df = df.dropna(subset=["week"])
-    grouped = df.groupby(["week", "programme"], observed=True)
-    out = grouped["menage_ano"].nunique().rename("n_total").reset_index()
+    if ev.empty:
+        return pd.DataFrame()
 
-    dist = df["dist_threshold"]
-    score = df[score_col]
-    for b in bands:
-        suffix = f"{int(b * 100):03d}"
-        mask_net = dist.abs() <= b
-        mask_neg = (dist >= -b) & (dist < 0)
-        mask_pos = (dist > 0) & (dist <= b)
-        df[f"near_{suffix}"] = mask_net
-        df[f"near_{suffix}_neg"] = mask_neg
-        df[f"near_{suffix}_pos"] = mask_pos
-        df[f"score_near_{suffix}"] = score.where(mask_net, np.nan)
+    t0 = ev["date_calcul"].min()
+    tmax = ev["date_calcul"].max()
+    freq_norm = (timeseries_freq or "W-MON").strip().upper()
+    if freq_norm in {"D", "DAILY"}:
+        period_points = pd.date_range(t0.normalize(), tmax.normalize(), freq="D")
+    else:
+        period_points = pd.date_range(t0.to_period("W").start_time, tmax.to_period("W").start_time, freq="W-MON")
+    if len(period_points) == 0:
+        return pd.DataFrame()
+    batch_n = int(batch_size) if int(batch_size) > 0 else len(period_points)
 
-        agg = (
-            df.groupby(["week", "programme"], observed=True)
-            .agg(
-                **{
-                    f"n_near_{suffix}": (f"near_{suffix}", "sum"),
-                    f"mean_score_{suffix}": (f"score_near_{suffix}", "mean"),
-                    f"median_score_{suffix}": (f"score_near_{suffix}", "median"),
-                    f"n_near_{suffix}_neg": (f"near_{suffix}_neg", "sum"),
-                    f"n_near_{suffix}_pos": (f"near_{suffix}_pos", "sum"),
-                }
-            )
-            .reset_index()
-        )
-        out = out.merge(agg, on=["week", "programme"], how="left")
+    # Fast path for dashboard profile shape (default bands only).
+    if tuple(bands) == (0.10, 0.25, 0.50):
+        pair_index = pd.MultiIndex.from_frame(ev[["menage_ano", "programme"]])
+        pair_codes, pair_uniques = pd.factorize(pair_index, sort=False)
+        if len(pair_codes) == 0:
+            return pd.DataFrame()
+        prog_labels = np.array([p[1] for p in pair_uniques], dtype=object)
 
+        dates = ev["date_calcul"].to_numpy(dtype="datetime64[ns]")
+        score_vals = ev[score_col].to_numpy(dtype=float)
+        dist_vals = ev["dist_threshold"].to_numpy(dtype=float)
+        order = np.argsort(dates, kind="stable")
+        dates = dates[order]
+        pair_codes = pair_codes[order]
+        score_vals = score_vals[order]
+        dist_vals = dist_vals[order]
+
+        n_pairs = int(pair_codes.max()) + 1
+        cur_scores = np.full(n_pairs, np.nan, dtype=float)
+        cur_dists = np.full(n_pairs, np.nan, dtype=float)
+        ptr = 0
+        n_ev = len(dates)
+        out_rows: list[dict[str, Any]] = []
+        unique_progs = np.unique(prog_labels)
+
+        for i in range(0, len(period_points), batch_n):
+            for week_end in period_points[i : i + batch_n]:
+                week_np = np.datetime64(week_end.to_datetime64(), "ns")
+                while ptr < n_ev and dates[ptr] <= week_np:
+                    idx = pair_codes[ptr]
+                    sv = score_vals[ptr]
+                    if np.isnan(sv):
+                        cur_scores[idx] = np.nan
+                        cur_dists[idx] = np.nan
+                    else:
+                        cur_scores[idx] = sv
+                        cur_dists[idx] = dist_vals[ptr]
+                    ptr += 1
+
+                valid = ~np.isnan(cur_scores) & ~np.isnan(cur_dists)
+                if not np.any(valid):
+                    continue
+
+                for prog in unique_progs:
+                    prog_mask = valid & (prog_labels == prog)
+                    if not np.any(prog_mask):
+                        continue
+                    scores = cur_scores[prog_mask]
+                    dists = cur_dists[prog_mask]
+                    row_out: dict[str, Any] = {"week": week_end.date(), "programme": prog, "n_total": int(scores.size)}
+
+                    for b in bands:
+                        suffix = f"{int(b * 100):03d}"
+                        mask_net = np.abs(dists) <= b
+                        mask_neg = (dists >= -b) & (dists < 0)
+                        mask_pos = (dists > 0) & (dists <= b)
+
+                        near_s_net = scores[mask_net]
+                        row_out[f"n_near_{suffix}"] = int(mask_net.sum())
+                        row_out[f"mean_score_{suffix}"] = (
+                            round(float(np.mean(near_s_net)), 6) if near_s_net.size > 0 else None
+                        )
+                        row_out[f"median_score_{suffix}"] = (
+                            round(float(np.median(near_s_net)), 6) if near_s_net.size > 0 else None
+                        )
+
+                        near_s_neg = scores[mask_neg]
+                        row_out[f"n_near_{suffix}_neg"] = int(mask_neg.sum())
+                        row_out[f"mean_score_{suffix}_neg"] = (
+                            round(float(np.mean(near_s_neg)), 6) if near_s_neg.size > 0 else None
+                        )
+                        row_out[f"median_score_{suffix}_neg"] = (
+                            round(float(np.median(near_s_neg)), 6) if near_s_neg.size > 0 else None
+                        )
+
+                        near_s_pos = scores[mask_pos]
+                        row_out[f"n_near_{suffix}_pos"] = int(mask_pos.sum())
+                        row_out[f"mean_score_{suffix}_pos"] = (
+                            round(float(np.mean(near_s_pos)), 6) if near_s_pos.size > 0 else None
+                        )
+                        row_out[f"median_score_{suffix}_pos"] = (
+                            round(float(np.median(near_s_pos)), 6) if near_s_pos.size > 0 else None
+                        )
+
+                    out_rows.append(row_out)
+
+        if not out_rows:
+            return pd.DataFrame()
+        out = pd.DataFrame(out_rows)
+        out["week"] = pd.to_datetime(out["week"], errors="coerce")
+        return out.sort_values(["week", "programme"]).reset_index(drop=True)
+
+    col_idx = {c: i for i, c in enumerate(ev.columns)}
+    date_idx = col_idx["date_calcul"]
+    score_idx = col_idx[score_col]
+    dist_idx = col_idx["dist_threshold"]
+    prog_idx = col_idx["programme"]
+    hh_idx = 0
+
+    ev_records = list(ev.itertuples(index=False, name=None))
+    n_ev = len(ev_records)
+    state: dict[tuple[Any, Any], tuple[float, float]] = {}
+    ev_ptr = 0
+    results: list[dict[str, Any]] = []
+
+    for i in range(0, len(period_points), batch_n):
+        for week_end in period_points[i : i + batch_n]:
+            while ev_ptr < n_ev:
+                row = ev_records[ev_ptr]
+                if row[date_idx] <= week_end:
+                    key = (row[hh_idx], row[prog_idx])
+                    sv = row[score_idx]
+                    if pd.isna(sv):
+                        state.pop(key, None)
+                    else:
+                        dv = row[dist_idx]
+                        state[key] = (float(sv), float(dv) if not pd.isna(dv) else np.nan)
+                    ev_ptr += 1
+                else:
+                    break
+
+            if not state:
+                continue
+
+            prog_groups: dict[Any, list[tuple[float, float]]] = {}
+            for (_, prog), pair in state.items():
+                prog_groups.setdefault(prog, []).append(pair)
+
+            for prog, pairs in prog_groups.items():
+                scores = np.array([p[0] for p in pairs], dtype=float)
+                dists = np.array([p[1] for p in pairs], dtype=float)
+                valid = ~np.isnan(scores) & ~np.isnan(dists)
+                scores = scores[valid]
+                dists = dists[valid]
+                if len(scores) == 0:
+                    continue
+
+                row_out: dict[str, Any] = {"week": week_end.date(), "programme": prog, "n_total": len(scores)}
+                for b in bands:
+                    suffix = f"{int(b * 100):03d}"
+                    mask_net = np.abs(dists) <= b
+                    mask_neg = (dists >= -b) & (dists < 0)
+                    mask_pos = (dists > 0) & (dists <= b)
+
+                    near_s_net = scores[mask_net]
+                    row_out[f"n_near_{suffix}"] = int(mask_net.sum())
+                    row_out[f"mean_score_{suffix}"] = (
+                        round(float(np.mean(near_s_net)), 6) if len(near_s_net) > 0 else None
+                    )
+                    row_out[f"median_score_{suffix}"] = (
+                        round(float(np.median(near_s_net)), 6) if len(near_s_net) > 0 else None
+                    )
+
+                    near_s_neg = scores[mask_neg]
+                    row_out[f"n_near_{suffix}_neg"] = int(mask_neg.sum())
+                    row_out[f"mean_score_{suffix}_neg"] = (
+                        round(float(np.mean(near_s_neg)), 6) if len(near_s_neg) > 0 else None
+                    )
+                    row_out[f"median_score_{suffix}_neg"] = (
+                        round(float(np.median(near_s_neg)), 6) if len(near_s_neg) > 0 else None
+                    )
+
+                    near_s_pos = scores[mask_pos]
+                    row_out[f"n_near_{suffix}_pos"] = int(mask_pos.sum())
+                    row_out[f"mean_score_{suffix}_pos"] = (
+                        round(float(np.mean(near_s_pos)), 6) if len(near_s_pos) > 0 else None
+                    )
+                    row_out[f"median_score_{suffix}_pos"] = (
+                        round(float(np.median(near_s_pos)), 6) if len(near_s_pos) > 0 else None
+                    )
+                results.append(row_out)
+
+    if not results:
+        return pd.DataFrame()
+    out = pd.DataFrame(results)
+    out["week"] = pd.to_datetime(out["week"], errors="coerce")
     return out.sort_values(["week", "programme"]).reset_index(drop=True)

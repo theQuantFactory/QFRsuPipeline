@@ -106,6 +106,18 @@ def _read_csv_safe(
 
 def load_menage(path: PathLike, chunk_size: int | None = None) -> pd.DataFrame:
     df = _read_csv_safe(path, dtypes=MENAGE_DTYPES, parse_dates=["date_naissance_cm"], chunk_size=chunk_size)
+    force_repair_cols = [
+        "milieu",
+        "region",
+        "province",
+        "commune",
+        "type_menage",
+        "etat_matrimonial_cm",
+        "genre_cm",
+    ]
+    existing_force_cols = [c for c in force_repair_cols if c in df.columns]
+    if existing_force_cols:
+        df = repair_dataframe(df, columns=existing_force_cols, verbose=False)
     if "milieu" in df.columns:
         df["milieu"] = df["milieu"].astype("string").str.strip().str.capitalize()
     if "genre_cm" in df.columns:

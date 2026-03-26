@@ -218,6 +218,8 @@ def run_csv_etl(
     verbose: bool = True,
     max_score: float = 15.0,
     snapshot_profile: str = "full",
+    timeseries_freq: str = "W-MON",
+    timeseries_batch_size: int = 0,
 ) -> dict[str, pd.DataFrame]:
     del verbose
     df_menage = load_menage(menage_path)
@@ -233,8 +235,18 @@ def run_csv_etl(
     df_timeline = build_menage_timeline(df_master)
     df_pivot = build_pivot_wide(df_master) if snapshot_profile == "full" else pd.DataFrame()
     df_trajectory = build_menage_trajectory(df_master)
-    df_ts = build_score_timeseries(df_master)["daily_stats"]
-    df_near = build_near_threshold_timeseries(df_master)
+    df_ts = build_score_timeseries(
+        df_master,
+        include_demo_breakdowns=(snapshot_profile == "full"),
+        include_percentiles=(snapshot_profile == "full"),
+        timeseries_freq=timeseries_freq,
+        batch_size=timeseries_batch_size,
+    )["daily_stats"]
+    df_near = build_near_threshold_timeseries(
+        df_master,
+        timeseries_freq=timeseries_freq,
+        batch_size=timeseries_batch_size,
+    )
     df_monthly = build_monthly_eligibility_flows(df_master)
     df_churn = build_churn_timeline(df_master)
     df_reentry_detail, df_reentry_summary = build_reentry_analysis(df_master)
@@ -299,6 +311,8 @@ def run_rsu_pipeline(
     output_dir: str | Path,
     sources: dict[str, Any] | None = None,
     snapshot_profile: str = "full",
+    timeseries_freq: str = "W-MON",
+    timeseries_batch_size: int = 0,
 ) -> dict[str, pd.DataFrame]:
     """Run RSU computations from discovered raw files and save snapshots."""
     src = sources if sources is not None else discover_rsu_sources(input_dir)
@@ -325,5 +339,7 @@ def run_rsu_pipeline(
         save_snapshots=True,
         snapshot_dir=output_dir,
         snapshot_profile=snapshot_profile,
+        timeseries_freq=timeseries_freq,
+        timeseries_batch_size=timeseries_batch_size,
     )
     return frames
