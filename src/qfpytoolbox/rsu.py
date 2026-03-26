@@ -103,7 +103,6 @@ def _build_qc_summary(
     df_menage_raw: pd.DataFrame,
     df_master: pd.DataFrame,
     *,
-    chunk_size: int = 200000,
     max_score: float = 15.0,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
@@ -116,16 +115,11 @@ def _build_qc_summary(
     n_scores_after = len(df_scores_raw)
     n_menage_after = len(df_menage_raw)
 
-    # Rebuild score frame before max-score filtering to split duplicate vs aberrant drops.
-    try:
-        df_scores_no_max = load_scores(scores_path, chunk_size=chunk_size, max_score=None)
-    except Exception:
-        df_scores_no_max = df_scores_raw
-    n_scores_no_max = len(df_scores_no_max)
-    n_aberrant = (
-        int((df_scores_no_max["score_final"] > max_score).sum()) if "score_final" in df_scores_no_max.columns else 0
-    )
-    n_score_dupes = max(raw_score - n_scores_no_max, 0)
+    # Avoid a second heavy pass on giant score files while building QC summary.
+    # We keep exact total dropped count and attribute it to duplicate-cleanup stage.
+    n_scores_no_max = n_scores_after
+    n_aberrant = int((df_scores_raw["score_final"] > max_score).sum()) if "score_final" in df_scores_raw.columns else 0
+    n_score_dupes = max(raw_score - n_scores_after, 0)
     n_menage_dupes = max(raw_menage - n_menage_after, 0)
 
     rows.append(
@@ -147,7 +141,7 @@ def _build_qc_summary(
             "after": raw_score - n_score_dupes,
             "dropped": n_score_dupes,
             "pct_dropped": _pct(n_score_dupes, raw_score),
-            "note": "Lignes de score exactes dupliquées supprimées avant filtrage des aberrants.",
+            "note": "Lignes retirées au nettoyage (doublons et autres exclusions avant dataset final).",
         }
     )
     rows.append(
@@ -158,7 +152,7 @@ def _build_qc_summary(
             "after": n_scores_after,
             "dropped": n_aberrant,
             "pct_dropped": _pct(n_aberrant, n_scores_no_max),
-            "note": f"Scores avec score_final > {max_score} exclus.",
+            "note": f"Scores avec score_final > {max_score} exclus (sur données déjà nettoyées).",
         }
     )
     rows.append(
@@ -253,7 +247,6 @@ def run_csv_etl(
         df_scores,
         df_menage,
         df_master,
-        chunk_size=chunk_size,
         max_score=max_score,
     )
 

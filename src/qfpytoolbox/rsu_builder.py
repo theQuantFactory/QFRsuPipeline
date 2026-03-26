@@ -247,9 +247,10 @@ def build_monthly_eligibility_flows(df_master: pd.DataFrame) -> pd.DataFrame:
         .last()
         .reset_index()
     )
-    m["prev_eligible"] = m.groupby("menage_ano", observed=True)["eligible"].shift(1)
-    m["eligible"] = m["eligible"].fillna(False).astype(bool)
-    m["prev_eligible"] = m["prev_eligible"].fillna(False).astype(bool)
+    m["eligible"] = m["eligible"].astype("boolean")
+    m["prev_eligible"] = m.groupby("menage_ano", observed=True)["eligible"].shift(1).astype("boolean")
+    m["eligible"] = m["eligible"].fillna(False)
+    m["prev_eligible"] = m["prev_eligible"].fillna(False)
     m["became_eligible"] = m["eligible"] & (~m["prev_eligible"])
     m["became_ineligible"] = (~m["eligible"]) & m["prev_eligible"]
     counts = m.groupby(["year_month", "eligible"], observed=True).size().unstack(fill_value=0)
@@ -373,24 +374,26 @@ def build_churn_timeline(df_master: pd.DataFrame) -> pd.DataFrame:
 def build_reentry_analysis(df_master: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     if not {"eligible", "programme", "menage_ano", "date_calcul"}.issubset(df_master.columns):
         return pd.DataFrame(), pd.DataFrame()
+    keys = ["menage_ano", "programme"]
     df = df_master[["menage_ano", "date_calcul", "eligible", "programme"]].copy()
     df["date_calcul"] = pd.to_datetime(df["date_calcul"], errors="coerce")
-    df = df.sort_values(["menage_ano", "programme", "date_calcul"])
-    rows = []
-    for (hid, prog), grp in df.groupby(["menage_ano", "programme"], observed=True):
-        statuses = grp["eligible"].astype(bool).tolist()
-        reentries = 0
-        lost_seen = False
-        for s in statuses:
-            if not s:
-                lost_seen = True
-            elif lost_seen:
-                reentries += 1
-                lost_seen = False
-        rows.append(
-            {"menage_ano": hid, "programme": prog, "n_reentries": reentries, "ever_lost": any(not s for s in statuses)}
+    df = df.sort_values(keys + ["date_calcul"])
+    df["eligible_bool"] = df["eligible"].fillna(False).astype(bool)
+    # Match historical loop logic exactly:
+    # count a re-entry when current is True and previous observed status is False.
+    # The first row in each (menage_ano, programme) group is never counted.
+    df["prev_eligible"] = df.groupby(keys, observed=True)["eligible_bool"].shift(1)
+    df["reentry_event"] = df["eligible_bool"] & df["prev_eligible"].eq(False)
+
+    detail = (
+        df.groupby(keys, observed=True)
+        .agg(
+            n_reentries=("reentry_event", "sum"),
+            ever_lost=("eligible_bool", lambda s: s.eq(False).any()),
         )
-    detail = pd.DataFrame(rows)
+        .reset_index()
+    )
+    detail["n_reentries"] = detail["n_reentries"].astype(int)
     if detail.empty:
         return detail, pd.DataFrame()
     summary = (
