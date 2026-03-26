@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Union
 
 import pandas as pd
 
@@ -11,7 +12,7 @@ from qfpytoolbox.rsu_encoding import detect_encoding, repair_dataframe
 
 log = logging.getLogger(__name__)
 
-PathLike = str | Path
+PathLike = Union[str, Path]
 
 MENAGE_DTYPES = {
     "menage_ano": "Int64",
