@@ -217,6 +217,7 @@ def run_csv_etl(
     chunk_size: int = 200000,
     verbose: bool = True,
     max_score: float = 15.0,
+    snapshot_profile: str = "full",
 ) -> dict[str, pd.DataFrame]:
     del verbose
     df_menage = load_menage(menage_path)
@@ -230,7 +231,7 @@ def run_csv_etl(
     df_master = build_master_events(df_menage, df_scores, df_programmes)
     df_delta = build_delta_frame(df_master)
     df_timeline = build_menage_timeline(df_master)
-    df_pivot = build_pivot_wide(df_master)
+    df_pivot = build_pivot_wide(df_master) if snapshot_profile == "full" else pd.DataFrame()
     df_trajectory = build_menage_trajectory(df_master)
     df_ts = build_score_timeseries(df_master)["daily_stats"]
     df_near = build_near_threshold_timeseries(df_master)
@@ -238,9 +239,15 @@ def run_csv_etl(
     df_churn = build_churn_timeline(df_master)
     df_reentry_detail, df_reentry_summary = build_reentry_analysis(df_master)
     df_ben_enriched = (
-        build_beneficiaire_enriched_events(df_master, df_beneficiaire) if not df_beneficiaire.empty else None
+        build_beneficiaire_enriched_events(df_master, df_beneficiaire)
+        if (not df_beneficiaire.empty and snapshot_profile == "full")
+        else None
     )
-    df_ben_monthly = build_monthly_beneficiaire_flows(df_beneficiaire) if not df_beneficiaire.empty else None
+    df_ben_monthly = (
+        build_monthly_beneficiaire_flows(df_beneficiaire)
+        if (not df_beneficiaire.empty and snapshot_profile == "full")
+        else None
+    )
     df_qc = _build_qc_summary(
         scores_path,
         menage_path,
@@ -259,9 +266,7 @@ def run_csv_etl(
         "master_events": df_master,
         "delta_frame": df_delta,
         "menage_timeline": df_timeline,
-        "pivot_wide": df_pivot,
         "raw_menage": df_menage,
-        "raw_scores": df_scores,
         "raw_programmes": df_programmes,
         "raw_beneficiaire": df_beneficiaire,
         "menage_trajectory": df_trajectory,
@@ -269,11 +274,15 @@ def run_csv_etl(
         "near_threshold_timeseries": df_near,
         "monthly_eligibility_flows": df_monthly,
         "churn_timeline": df_churn,
-        "reentry_detail": df_reentry_detail,
         "reentry_summary": df_reentry_summary,
         "qc_summary": df_qc,
         **programme_frames,
     }
+    if snapshot_profile == "full":
+        frames["pivot_wide"] = df_pivot
+    if snapshot_profile == "full":
+        frames["raw_scores"] = df_scores
+        frames["reentry_detail"] = df_reentry_detail
     if df_ben_enriched is not None:
         frames["beneficiaire_enriched_events"] = df_ben_enriched
     if df_ben_monthly is not None:
@@ -289,6 +298,7 @@ def run_rsu_pipeline(
     input_dir: str | Path,
     output_dir: str | Path,
     sources: dict[str, Any] | None = None,
+    snapshot_profile: str = "full",
 ) -> dict[str, pd.DataFrame]:
     """Run RSU computations from discovered raw files and save snapshots."""
     src = sources if sources is not None else discover_rsu_sources(input_dir)
@@ -314,5 +324,6 @@ def run_rsu_pipeline(
         beneficiaire_path=src.get("beneficiaire"),
         save_snapshots=True,
         snapshot_dir=output_dir,
+        snapshot_profile=snapshot_profile,
     )
     return frames

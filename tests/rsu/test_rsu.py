@@ -6,6 +6,7 @@ from qfpytoolbox.rsu import (
     build_churn_timeline,
     build_master_events,
     build_near_threshold_timeseries,
+    run_csv_etl,
 )
 
 
@@ -44,3 +45,47 @@ def test_near_threshold_timeseries_present():
     near = build_near_threshold_timeseries(master)
     assert not near.empty
     assert {"n_near_010", "n_near_025", "n_near_050"}.issubset(near.columns)
+
+
+def test_run_csv_etl_dashboard_profile_omits_heavy_frames(tmp_path):
+    menage_path = tmp_path / "menage.csv"
+    scores_path = tmp_path / "score.csv"
+    amot_path = tmp_path / "amot.csv"
+    asd_path = tmp_path / "asd.csv"
+
+    pd.DataFrame(
+        {
+            "menage_ano": [1, 2],
+            "region": ["R1", "R2"],
+            "milieu": ["Urbain", "Rural"],
+            "genre_cm": ["Homme", "Femme"],
+        }
+    ).to_csv(menage_path, index=False)
+
+    pd.DataFrame(
+        {
+            "menage_ano": [1, 1, 2, 2],
+            "score_id_ano": [10, 11, 20, 21],
+            "type_demande": ["Inscription", "mise à jour du dossier", "Inscription", "mise à jour du dossier"],
+            "score_corrige": [None, 9.2, None, 9.6],
+            "score_calcule": [9.4, 9.3, 9.8, 9.7],
+            "date_calcul": ["2024-01-01", "2024-02-01", "2024-01-01", "2024-02-01"],
+        }
+    ).to_csv(scores_path, index=False)
+
+    pd.DataFrame({"menage_ano": [1]}).to_csv(amot_path, index=False)
+    pd.DataFrame({"menage_ano": [2]}).to_csv(asd_path, index=False)
+
+    frames = run_csv_etl(
+        menage_path=menage_path,
+        scores_path=scores_path,
+        programme_paths={"AMOT": amot_path, "ASD": asd_path},
+        save_snapshots=False,
+        snapshot_profile="dashboard",
+    )
+
+    assert "master_events" in frames
+    assert "raw_scores" not in frames
+    assert "reentry_detail" not in frames
+    assert "pivot_wide" not in frames
+    assert "monthly_beneficiaire_flows" not in frames
