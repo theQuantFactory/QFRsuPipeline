@@ -416,25 +416,42 @@ def build_near_threshold_timeseries(
     if not req.issubset(df_master.columns):
         return pd.DataFrame()
     df = df_master[["menage_ano", "date_calcul", score_col, "programme", "dist_threshold"]].copy()
-    df["date_calcul"] = pd.to_datetime(df["date_calcul"], errors="coerce")
+    # Avoid expensive unique-value cache work on giant object columns when dates are already parsed.
+    if not pd.api.types.is_datetime64_any_dtype(df["date_calcul"]):
+        df["date_calcul"] = pd.to_datetime(df["date_calcul"], errors="coerce", cache=False)
     df["week"] = df["date_calcul"].dt.to_period("W").dt.start_time
     df = df.sort_values(["week", "menage_ano", "programme", "date_calcul"]).drop_duplicates(
         ["week", "menage_ano", "programme"], keep="last"
     )
-    rows: list[dict[str, Any]] = []
-    for (week, prog), grp in df.groupby(["week", "programme"], observed=True):
-        row: dict[str, Any] = {"week": week, "programme": prog, "n_total": int(grp["menage_ano"].nunique())}
-        for b in bands:
-            suffix = f"{int(b * 100):03d}"
-            d = grp["dist_threshold"]
-            s = grp[score_col]
-            mask_net = d.abs() <= b
-            mask_neg = (d >= -b) & (d < 0)
-            mask_pos = (d > 0) & (d <= b)
-            row[f"n_near_{suffix}"] = int(mask_net.sum())
-            row[f"mean_score_{suffix}"] = float(s[mask_net].mean()) if mask_net.any() else np.nan
-            row[f"median_score_{suffix}"] = float(s[mask_net].median()) if mask_net.any() else np.nan
-            row[f"n_near_{suffix}_neg"] = int(mask_neg.sum())
-            row[f"n_near_{suffix}_pos"] = int(mask_pos.sum())
-        rows.append(row)
-    return pd.DataFrame(rows).sort_values(["week", "programme"]).reset_index(drop=True)
+    df = df.dropna(subset=["week"])
+    grouped = df.groupby(["week", "programme"], observed=True)
+    out = grouped["menage_ano"].nunique().rename("n_total").reset_index()
+
+    dist = df["dist_threshold"]
+    score = df[score_col]
+    for b in bands:
+        suffix = f"{int(b * 100):03d}"
+        mask_net = dist.abs() <= b
+        mask_neg = (dist >= -b) & (dist < 0)
+        mask_pos = (dist > 0) & (dist <= b)
+        df[f"near_{suffix}"] = mask_net
+        df[f"near_{suffix}_neg"] = mask_neg
+        df[f"near_{suffix}_pos"] = mask_pos
+        df[f"score_near_{suffix}"] = score.where(mask_net, np.nan)
+
+        agg = (
+            df.groupby(["week", "programme"], observed=True)
+            .agg(
+                **{
+                    f"n_near_{suffix}": (f"near_{suffix}", "sum"),
+                    f"mean_score_{suffix}": (f"score_near_{suffix}", "mean"),
+                    f"median_score_{suffix}": (f"score_near_{suffix}", "median"),
+                    f"n_near_{suffix}_neg": (f"near_{suffix}_neg", "sum"),
+                    f"n_near_{suffix}_pos": (f"near_{suffix}_pos", "sum"),
+                }
+            )
+            .reset_index()
+        )
+        out = out.merge(agg, on=["week", "programme"], how="left")
+
+    return out.sort_values(["week", "programme"]).reset_index(drop=True)
