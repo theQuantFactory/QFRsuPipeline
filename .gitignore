@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# RSU dashboard local data and generated artifacts
+apps/rsu_dashboard/data/raw/
+apps/rsu_dashboard/data/interim/
+apps/rsu_dashboard/data/processed/
+apps/rsu_dashboard/snapshots/
+apps/rsu_dashboard/**/*.parquet
+apps/rsu_dashboard/**/*.pkl

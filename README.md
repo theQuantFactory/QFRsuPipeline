@@ -230,6 +230,26 @@ ruff check src/ tests/
 
 ---
 
+## RSU Dashboard App
+
+An end-to-end app scaffold is available in `apps/rsu_dashboard`:
+
+- mixed-format input ingestion (CSV / Arrow / Excel),
+- parquet snapshot generation,
+- prebaked dashboard cache (`.pkl`) for fast load,
+- Streamlit multi-page dashboard.
+
+See `apps/rsu_dashboard/README.md` for run commands.
+
+RSU production helpers live in:
+
+- `qfpytoolbox.rsu` (orchestration API)
+- `qfpytoolbox.rsu_loaders` (robust CSV loaders + typing/cleaning)
+- `qfpytoolbox.rsu_builder` (analysis frame builders)
+- `qfpytoolbox.rsu_encoding` (encoding detection and repair)
+
+---
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
