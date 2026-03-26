@@ -122,7 +122,9 @@ def _build_qc_summary(
     except Exception:
         df_scores_no_max = df_scores_raw
     n_scores_no_max = len(df_scores_no_max)
-    n_aberrant = int((df_scores_no_max["score_final"] > max_score).sum()) if "score_final" in df_scores_no_max.columns else 0
+    n_aberrant = (
+        int((df_scores_no_max["score_final"] > max_score).sum()) if "score_final" in df_scores_no_max.columns else 0
+    )
     n_score_dupes = max(raw_score - n_scores_no_max, 0)
     n_menage_dupes = max(raw_menage - n_menage_after, 0)
 
@@ -182,9 +184,7 @@ def _build_qc_summary(
         }
     )
     if "menage_ano" in df_menage_raw.columns and "menage_ano" in df_master.columns:
-        n_no_score = int(
-            (~df_menage_raw["menage_ano"].isin(df_master["menage_ano"].dropna().unique())).sum()
-        )
+        n_no_score = int((~df_menage_raw["menage_ano"].isin(df_master["menage_ano"].dropna().unique())).sum())
         rows.append(
             {
                 "metric": "menage_no_score",
@@ -243,7 +243,9 @@ def run_csv_etl(
     df_monthly = build_monthly_eligibility_flows(df_master)
     df_churn = build_churn_timeline(df_master)
     df_reentry_detail, df_reentry_summary = build_reentry_analysis(df_master)
-    df_ben_enriched = build_beneficiaire_enriched_events(df_master, df_beneficiaire) if not df_beneficiaire.empty else None
+    df_ben_enriched = (
+        build_beneficiaire_enriched_events(df_master, df_beneficiaire) if not df_beneficiaire.empty else None
+    )
     df_ben_monthly = build_monthly_beneficiaire_flows(df_beneficiaire) if not df_beneficiaire.empty else None
     df_qc = _build_qc_summary(
         scores_path,
@@ -255,7 +257,11 @@ def run_csv_etl(
         max_score=max_score,
     )
 
-    programme_frames = {f"programme_{p}": build_programme_frame(df_master, p) for p in df_programmes["programme"].unique()} if not df_programmes.empty else {}
+    programme_frames = (
+        {f"programme_{p}": build_programme_frame(df_master, p) for p in df_programmes["programme"].unique()}
+        if not df_programmes.empty
+        else {}
+    )
     frames: dict[str, pd.DataFrame] = {
         "master_events": df_master,
         "delta_frame": df_delta,

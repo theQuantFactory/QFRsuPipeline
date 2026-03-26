@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -45,7 +44,7 @@ def _recover_mojibake(text: str) -> str:
         return text
 
 
-def repair_dataframe(df: pd.DataFrame, *, columns: Optional[list[str]] = None, verbose: bool = False) -> pd.DataFrame:
+def repair_dataframe(df: pd.DataFrame, *, columns: list[str] | None = None, verbose: bool = False) -> pd.DataFrame:
     """Repair mojibake corruption in object columns."""
     out = df.copy()
     target_cols = columns
@@ -57,14 +56,9 @@ def repair_dataframe(df: pd.DataFrame, *, columns: Optional[list[str]] = None, v
         if s.dtype != "object":
             continue
         before = s.astype(str).str.contains("Ã|â€|Â", na=False, regex=True).sum()
-        fixed = (
-            s.astype(str)
-            .map(_recover_mojibake)
-            .replace(MOJIBAKE_MAP, regex=False)
-        )
+        fixed = s.astype(str).map(_recover_mojibake).replace(MOJIBAKE_MAP, regex=False)
         out[col] = fixed.where(s.notna(), other=None)
         if verbose:
             after = out[col].astype(str).str.contains("Ã|â€|Â", na=False, regex=True).sum()
             log.info("repair %-30s %d -> %d", col, int(before), int(after))
     return out
-

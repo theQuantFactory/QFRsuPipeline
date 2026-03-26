@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -60,9 +59,9 @@ __all__ = [
 def _read_csv_safe(
     path: PathLike,
     *,
-    dtypes: Optional[dict[str, str]] = None,
-    parse_dates: Optional[list[str]] = None,
-    chunk_size: Optional[int] = None,
+    dtypes: dict[str, str] | None = None,
+    parse_dates: list[str] | None = None,
+    chunk_size: int | None = None,
 ) -> pd.DataFrame:
     p = Path(path)
     if not p.exists():
@@ -104,13 +103,17 @@ def _read_csv_safe(
     return df
 
 
-def load_menage(path: PathLike, chunk_size: Optional[int] = None) -> pd.DataFrame:
+def load_menage(path: PathLike, chunk_size: int | None = None) -> pd.DataFrame:
     df = _read_csv_safe(path, dtypes=MENAGE_DTYPES, parse_dates=["date_naissance_cm"], chunk_size=chunk_size)
     if "milieu" in df.columns:
         df["milieu"] = df["milieu"].astype("string").str.strip().str.capitalize()
     if "genre_cm" in df.columns:
         df["genre_cm"] = (
-            df["genre_cm"].astype("string").str.strip().str.capitalize().replace(
+            df["genre_cm"]
+            .astype("string")
+            .str.strip()
+            .str.capitalize()
+            .replace(
                 {
                     "Masculin": "Homme",
                     "Male": "Homme",
@@ -142,7 +145,9 @@ def load_scores(path: PathLike, chunk_size: int = 200000, max_score: float = 15.
     return df
 
 
-def load_scores_multi(paths: list[PathLike], output_dir: PathLike, chunk_size: int = 200000, max_score: float = 15.0) -> Path:
+def load_scores_multi(
+    paths: list[PathLike], output_dir: PathLike, chunk_size: int = 200000, max_score: float = 15.0
+) -> Path:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     all_frames = [load_scores(p, chunk_size=chunk_size, max_score=max_score) for p in paths]
@@ -174,4 +179,3 @@ def load_beneficiaire(path: PathLike) -> pd.DataFrame:
     if "partner_id" in df.columns:
         df["partner_id"] = df["partner_id"].astype("string").str.upper()
     return df
-
