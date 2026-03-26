@@ -281,8 +281,11 @@ def _construct_from_dict(cls: type, data: dict[str, Any]) -> Any:
     try:
         sig = inspect.signature(cls.__init__)
         expected = {
-            name for name, p in sig.parameters.items()
-            if name != "self" and p.kind not in (
+            name
+            for name, p in sig.parameters.items()
+            if name != "self"
+            and p.kind
+            not in (
                 inspect.Parameter.VAR_POSITIONAL,
                 inspect.Parameter.VAR_KEYWORD,
             )
@@ -297,10 +300,7 @@ def _construct_from_dict(cls: type, data: dict[str, Any]) -> Any:
         missing = expected - set(data)
         # check defaults
         sig2 = inspect.signature(cls.__init__)
-        missing_no_default = {
-            k for k in missing
-            if sig2.parameters[k].default is inspect.Parameter.empty
-        }
+        missing_no_default = {k for k in missing if sig2.parameters[k].default is inspect.Parameter.empty}
         if missing_no_default:
             raise ValueError(f"Missing keys for {cls.__name__!r}: {sorted(missing_no_default)!r}")
 

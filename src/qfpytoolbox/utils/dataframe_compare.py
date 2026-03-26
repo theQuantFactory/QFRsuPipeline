@@ -187,12 +187,16 @@ def compare_dataframes(
     # left-only / right-only rows
     for _, row in merged[left_only_mask].iterrows():
         key_txt = _key_text(row, lkeys)
-        diff_rows.append({"issue": "left_only", "column": "", "key": key_txt, "left_value": "", "right_value": "", "detail": ""})
+        diff_rows.append(
+            {"issue": "left_only", "column": "", "key": key_txt, "left_value": "", "right_value": "", "detail": ""}
+        )
         if max_differences is not None and len(diff_rows) >= max_differences:
             break
     for _, row in merged[right_only_mask].iterrows():
         key_txt = _key_text(row, lkeys)
-        diff_rows.append({"issue": "right_only", "column": "", "key": key_txt, "left_value": "", "right_value": "", "detail": ""})
+        diff_rows.append(
+            {"issue": "right_only", "column": "", "key": key_txt, "left_value": "", "right_value": "", "detail": ""}
+        )
         if max_differences is not None and len(diff_rows) >= max_differences:
             break
 
@@ -218,14 +222,16 @@ def compare_dataframes(
 
             if lv_is_na != rv_is_na:
                 missing_mm += 1
-                diff_rows.append({
-                    "issue": "missing_mismatch",
-                    "column": col,
-                    "key": key_txt,
-                    "left_value": _vt(lv),
-                    "right_value": _vt(rv),
-                    "detail": "",
-                })
+                diff_rows.append(
+                    {
+                        "issue": "missing_mismatch",
+                        "column": col,
+                        "key": key_txt,
+                        "left_value": _vt(lv),
+                        "right_value": _vt(rv),
+                        "detail": "",
+                    }
+                )
                 if max_differences is not None and len(diff_rows) >= max_differences:
                     break
                 continue
@@ -236,14 +242,16 @@ def compare_dataframes(
                 if isinstance(lv, (int, float)) and isinstance(rv, (int, float)):
                     abs_diff = str(abs(float(lv) - float(rv)))
                 type_mm += 1
-                diff_rows.append({
-                    "issue": "type_mismatch",
-                    "column": col,
-                    "key": key_txt,
-                    "left_value": _vt(lv),
-                    "right_value": _vt(rv),
-                    "detail": abs_diff or "",
-                })
+                diff_rows.append(
+                    {
+                        "issue": "type_mismatch",
+                        "column": col,
+                        "key": key_txt,
+                        "left_value": _vt(lv),
+                        "right_value": _vt(rv),
+                        "detail": abs_diff or "",
+                    }
+                )
                 if max_differences is not None and len(diff_rows) >= max_differences:
                     break
                 continue
@@ -254,14 +262,16 @@ def compare_dataframes(
                     passed_checks += 1
                 else:
                     numeric_mm += 1
-                    diff_rows.append({
-                        "issue": "numeric_mismatch",
-                        "column": col,
-                        "key": key_txt,
-                        "left_value": _vt(lv),
-                        "right_value": _vt(rv),
-                        "detail": str(abs(float(lv) - float(rv))),
-                    })
+                    diff_rows.append(
+                        {
+                            "issue": "numeric_mismatch",
+                            "column": col,
+                            "key": key_txt,
+                            "left_value": _vt(lv),
+                            "right_value": _vt(rv),
+                            "detail": str(abs(float(lv) - float(rv))),
+                        }
+                    )
                     if max_differences is not None and len(diff_rows) >= max_differences:
                         break
                 continue
@@ -271,14 +281,16 @@ def compare_dataframes(
                 passed_checks += 1
             else:
                 value_mm += 1
-                diff_rows.append({
-                    "issue": "value_mismatch",
-                    "column": col,
-                    "key": key_txt,
-                    "left_value": _vt(lv),
-                    "right_value": _vt(rv),
-                    "detail": "",
-                })
+                diff_rows.append(
+                    {
+                        "issue": "value_mismatch",
+                        "column": col,
+                        "key": key_txt,
+                        "left_value": _vt(lv),
+                        "right_value": _vt(rv),
+                        "detail": "",
+                    }
+                )
                 if max_differences is not None and len(diff_rows) >= max_differences:
                     break
 

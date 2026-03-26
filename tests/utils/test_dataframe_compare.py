@@ -98,9 +98,7 @@ class TestCompareDataframes:
     def test_precision_per_column_dict(self):
         left = pd.DataFrame({"id": [1], "a": [1.0], "b": [10.0]})
         right = pd.DataFrame({"id": [1], "a": [1.09], "b": [10.5]})
-        result = compare_dataframes(
-            left, right, "id", target_columns=["a", "b"], precision={"a": 0.1, "b": 0.1}
-        )
+        result = compare_dataframes(left, right, "id", target_columns=["a", "b"], precision={"a": 0.1, "b": 0.1})
         # a within 0.1, b not within 0.1
         assert result.numeric_mismatches >= 1
         assert not result.equal

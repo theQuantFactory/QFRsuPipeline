@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install*)",
+      "Bash(pip install -e*)",
+      "Bash(ruff check*)",
+      "Bash(ruff format*)",
+      "Bash(pytest*)",
+      "Bash(python -m pytest*)",
+      "Bash(python -c*)",
+      "Bash(python3 -c*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git show*)",
+      "Bash(git ls-files*)",
+      "Bash(find * -type f*)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(echo *)",
+      "Bash(mkdir -p *)"
+    ],
+    "deny": []
+  }
+}

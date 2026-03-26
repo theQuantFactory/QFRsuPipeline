@@ -228,9 +228,7 @@ def add_days_convention(
 
             if isinstance(holidays, pd.DataFrame):
                 if "ref_dt" not in holidays.columns:
-                    raise ValueError(
-                        "calendar DataFrame must contain a 'ref_dt' column of dates or yyyymmdd integers"
-                    )
+                    raise ValueError("calendar DataFrame must contain a 'ref_dt' column of dates or yyyymmdd integers")
                 # ref_dt lists *business* days — invert: everything not in it is non-business
                 # We handle this via a special flag below
                 biz_days: frozenset[date] = frozenset(_to_date(v) for v in holidays["ref_dt"])

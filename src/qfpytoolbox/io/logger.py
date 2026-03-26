@@ -38,11 +38,11 @@ _LEVEL_PRIORITY: dict[str, int] = {
 
 _LEVEL_ANSI: dict[str, str] = {
     "debug": "\033[90m",  # bright-black / grey
-    "info": "\033[36m",   # cyan
-    "warn": "\033[33m",   # yellow
+    "info": "\033[36m",  # cyan
+    "warn": "\033[33m",  # yellow
     "error": "\033[31m",  # red
 }
-_TS_ANSI = "\033[32m"   # green for timestamp
+_TS_ANSI = "\033[32m"  # green for timestamp
 _RESET = "\033[0m"
 
 # ---------------------------------------------------------------------------
@@ -355,4 +355,3 @@ def _write_to_database(source: Any, record: LogRecord, *, table: str = "logs", *
         ),
     )
     conn.commit()
-

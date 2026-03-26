@@ -47,10 +47,7 @@ def _import_pandas():
 
         return pd
     except ImportError as exc:
-        raise ImportError(
-            "pandas is required for DataFrame I/O. "
-            "Install it with: pip install pandas"
-        ) from exc
+        raise ImportError("pandas is required for DataFrame I/O. Install it with: pip install pandas") from exc
 
 
 def _import_pyarrow():
@@ -60,10 +57,7 @@ def _import_pyarrow():
 
         return pa, feather
     except ImportError as exc:
-        raise ImportError(
-            "pyarrow is required for Arrow format. "
-            "Install it with: pip install pyarrow"
-        ) from exc
+        raise ImportError("pyarrow is required for Arrow format. Install it with: pip install pyarrow") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -413,9 +407,7 @@ def _write_to_path(
         )
 
 
-def _do_write_csv(
-    path: str, df: Any, *, is_gz: bool, atomic: bool, overwrite: bool, **kwargs: Any
-) -> None:
+def _do_write_csv(path: str, df: Any, *, is_gz: bool, atomic: bool, overwrite: bool, **kwargs: Any) -> None:
     if atomic:
         dir_ = os.path.dirname(path) or "."
         suffix = ".csv.gz" if is_gz else ".csv"
@@ -505,8 +497,7 @@ def _write_to_database_media(media: Any, df: Any, **kwargs: Any) -> None:
     table: str | None = kwargs.pop("table", None)
     if table is None:
         raise ValueError(
-            "For DatabaseMedia writes, provide table=<table_name> "
-            "or use write_dataframe(media, df, table='name')"
+            "For DatabaseMedia writes, provide table=<table_name> or use write_dataframe(media, df, table='name')"
         )
     from qfpytoolbox.io.media import _validate_sql_identifier  # noqa: PLC0415
 

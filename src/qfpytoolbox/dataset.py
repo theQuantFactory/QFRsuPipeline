@@ -125,7 +125,9 @@ def write_dataset(
             source = FileSystemMedia(source)
 
     if isinstance(source, FileSystemMedia):
-        _write_to_filesystem(source.path, dataset, file_format=file_format, overwrite=overwrite, atomic=atomic, pretty=pretty)
+        _write_to_filesystem(
+            source.path, dataset, file_format=file_format, overwrite=overwrite, atomic=atomic, pretty=pretty
+        )
     elif isinstance(source, ArchiveMedia):
         _write_to_archive(source, dataset, file_format=file_format, overwrite=overwrite, pretty=pretty)
     elif isinstance(source, ConsoleMedia):
@@ -217,9 +219,7 @@ def _write_to_archive(
 ) -> None:
     """Write dataset to a temporary directory then pack it into an archive."""
     with tempfile.TemporaryDirectory() as tmp_dir:
-        _write_to_filesystem(
-            tmp_dir, dataset, file_format=file_format, overwrite=True, atomic=False, pretty=pretty
-        )
+        _write_to_filesystem(tmp_dir, dataset, file_format=file_format, overwrite=True, atomic=False, pretty=pretty)
         _pack_directory_to_archive(tmp_dir, media.path, media.format, overwrite=overwrite)
 
 
@@ -335,8 +335,7 @@ def read_dataset(
         return _read_from_archive(src, cls=cls, file_format=file_format)
     else:
         raise TypeError(
-            f"read_dataset is only implemented for FileSystemMedia and ArchiveMedia. "
-            f"Got: {type(src).__name__!r}"
+            f"read_dataset is only implemented for FileSystemMedia and ArchiveMedia. Got: {type(src).__name__!r}"
         )
 
 
