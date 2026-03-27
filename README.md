@@ -6,6 +6,16 @@
 
 A Pythonic data and utilities toolbox — Python equivalent of [`MyJuliaToolbox.jl`](https://github.com/lemahdi/MyJuliaToolbox.jl).
 
+## Scope boundary
+
+`qfpytoolbox` is a reusable package, not an application repository.
+
+- Included: generic data I/O, media abstractions, async logging, dataset persistence,
+  parameter serialization, and utility helpers.
+- Excluded: RSU-domain orchestration (ingest/compute dashboards, ETL entrypoints,
+  dashboard cache prebake flows). Those belong in application repos such as
+  `QFRsuDashboard`.
+
 ---
 
 ## Features

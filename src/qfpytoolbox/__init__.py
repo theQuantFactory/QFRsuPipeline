@@ -16,14 +16,6 @@ __version__ = "0.1.0"
 
 # -- IO helpers re-exported at top level for convenience --------------------
 # -- Parameters & Dataset ---------------------------------------------------
-from qfpytoolbox.analytics import (
-    build_dashboard_cache,
-    load_dashboard_cache,
-    load_frames,
-    load_parquet_frames,
-    run_calculations,
-    save_frames_as_parquet,
-)
 from qfpytoolbox.dataset import (
     LoadedDataSet,
     iDataSet,
@@ -58,17 +50,6 @@ from qfpytoolbox.parameters import (
     parameters_from_json,
     read_parameters,
     write_parameters,
-)
-from qfpytoolbox.rsu import (
-    build_churn_timeline,
-    build_delta_frame,
-    build_master_events,
-    build_monthly_eligibility_flows,
-    build_near_threshold_timeseries,
-    build_score_timeseries,
-    discover_rsu_sources,
-    run_csv_etl,
-    run_rsu_pipeline,
 )
 
 # -- Utils re-exported at top level -----------------------------------------
@@ -127,21 +108,4 @@ __all__ = [
     "nonpersisted_fields",
     "write_dataset",
     "read_dataset",
-    # analytics
-    "load_frames",
-    "save_frames_as_parquet",
-    "load_parquet_frames",
-    "run_calculations",
-    "build_dashboard_cache",
-    "load_dashboard_cache",
-    # rsu
-    "discover_rsu_sources",
-    "build_master_events",
-    "build_delta_frame",
-    "build_monthly_eligibility_flows",
-    "build_churn_timeline",
-    "build_near_threshold_timeseries",
-    "build_score_timeseries",
-    "run_csv_etl",
-    "run_rsu_pipeline",
 ]
